@@ -291,7 +291,10 @@ export function createShop({ paystack, store, config, now = () => new Date() }: 
       return { state: 'failed', ...facts(o), itemStillAvailable: await release(o), message: 'Paystack marked this payment as failed. The hold is released.' };
     }
 
-    const rejected = await store.getRejected(o.ref);
+    // two ways to learn paystack bounced a wrong amount: the webhook, or verify's free-text
+    // gateway_response afterwards. we've seen the webhook not come the second time, so check both.
+    const bounced = /incorrect amount/i.test(v.gatewayResponse ?? '') ? (v.gatewayResponse as string) : null;
+    const rejected = (await store.getRejected(o.ref)) ?? bounced;
     if (rejected && !expired(o)) {
       return { state: 'rejected_wrong_amount', ...facts(o), holdUntil: o.expiresAt, holdUntilLagos: lagosTime(o.expiresAt), message: `Paystack bounced a transfer to this account (${rejected}). The money goes back to the sender's bank. Only the exact amount is accepted.` };
     }

@@ -87,6 +87,12 @@ describe('checkPayment', () => {
     expect(await shop.checkPayment({ orderRef: ref })).toMatchObject({ state: 'rejected_wrong_amount', holdUntil: '2026-10-22T11:30:00.000Z' });
   });
 
+  it('spots a bounced transfer from verify even if the webhook never came', async () => {
+    const { paystack, shop, ref } = await setup();
+    paystack.bounce(ref);
+    expect(await shop.checkPayment({ orderRef: ref })).toMatchObject({ state: 'rejected_wrong_amount', holdUntilLagos: '12:30pm' });
+  });
+
   it('a correct payment after a rejected one still counts', async () => {
     const { paystack, store, shop, ref } = await setup();
     await store.markRejected(ref, 'amount did not match');

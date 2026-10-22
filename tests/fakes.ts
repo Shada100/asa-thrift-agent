@@ -3,7 +3,7 @@ import { PaystackError, type Paystack, type PsProduct, type PsTransferCharge, ty
 // in-memory stand-in for Paystack test mode, shaped after what the real API returned in the spike
 export class FakePaystack implements Paystack {
   products = new Map<number, PsProduct>();
-  charges = new Map<string, TransferChargeArgs & { status: string; paidKobo?: number }>();
+  charges = new Map<string, TransferChargeArgs & { status: string; paidKobo?: number; gateway?: string }>();
   chargeCalls = 0;
   failNextCharge: PaystackError | null = null;
   failVerify: PaystackError | null = null;
@@ -31,6 +31,11 @@ export class FakePaystack implements Paystack {
     if (!c) throw new Error(`no charge ${reference}`);
     c.status = 'success';
     c.paidKobo = kobo ?? c.amountKobo;
+  }
+
+  // what verify shows after paystack bounced a wrong-amount transfer (seen in test mode)
+  bounce(reference: string) {
+    this.charges.get(reference)!.gateway = 'incorrect amount sent';
   }
 
   setStatus(reference: string, status: string) {
@@ -84,7 +89,7 @@ export class FakePaystack implements Paystack {
       status: c.status,
       amountKobo: c.paidKobo ?? c.amountKobo,
       requestedAmountKobo: c.amountKobo,
-      gatewayResponse: c.status === 'success' ? 'Approved' : 'Awaiting Transfer',
+      gatewayResponse: c.gateway ?? (c.status === 'success' ? 'Approved' : 'Awaiting Transfer'),
     };
   }
 }
