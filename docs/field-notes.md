@@ -90,7 +90,7 @@ I stopped keying anything off status names except `success`. Expiry is decided b
 
 - **Uploaded skill shows as "Untitled skill"** despite `name:` in the frontmatter (also reported by the other builder; I saw the same in `GET /v1/teammates/{id}/skills`). I set the name through the Skills API draft save.
 - **Tool names are mangled from non-ASCII server names.** "Àṣà Thrift tools" became `mcp______Thrift_tools__find_items` in step traces.
-- **A new `session_id` landed on an old thread.** Two `say` calls with the same `sender_id` and different `session_id`s returned the same `thread_id`. The docs say a new session id starts a fresh conversation. I couldn't inspect it (no `thread:read`), so in my CLI I now use one sender per session.
+- **A new `session_id` landed on an old thread.** Two `say` calls with the same `sender_id` and different `session_id`s returned the same `thread_id`. The docs say a new session id starts a fresh conversation. I couldn't inspect it (no `thread:read`), so in my CLI I now use one sender per session. The simulator behaves the same way: a "new chat" for the same Chord user still carried the previous conversation, which is what set off note #1 there.
 - **Vercel:**
   - *Type definitions.* The builder failed with `TS2688: Cannot find type definition file for 'node'` on TypeScript 7.0.2. I reproduced it with a local `vercel build` and pinned 5.9.
   - *Express mode.* Vercel quietly ran the project in Express mode from `src/app.ts`, which returned 500 on `/` ("Invalid export found"). When I renamed the file, the build demanded an entry that imports express. It now lives at `src/server.ts`.
