@@ -25,7 +25,7 @@ export function loadConfig(env: Env = process.env): Config {
     paystackSecret,
     mcpToken,
     holdMinutes: Number.isFinite(holdMinutes) && holdMinutes > 0 ? holdMinutes : 30,
-    customerEmailDomain: env.CUSTOMER_EMAIL_DOMAIN?.trim() || 'asathrift.test',
+    customerEmailDomain: env.CUSTOMER_EMAIL_DOMAIN?.trim() || 'example.com',
     // Vercel's Upstash integration names these KV_REST_API_*, the Upstash console names them UPSTASH_REDIS_REST_*
     redisUrl: env.UPSTASH_REDIS_REST_URL ?? env.KV_REST_API_URL,
     redisToken: env.UPSTASH_REDIS_REST_TOKEN ?? env.KV_REST_API_TOKEN,

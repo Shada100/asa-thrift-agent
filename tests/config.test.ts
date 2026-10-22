@@ -13,4 +13,9 @@ describe('loadConfig', () => {
   it('defaults hold to 30 minutes', () => {
     expect(loadConfig({ PAYSTACK_SECRET_KEY: 'sk_test_x', MCP_TOKEN: 't' }).holdMinutes).toBe(30);
   });
+
+  // paystack rejects reserved TLDs like .test as "not a valid email", found in the spike
+  it('defaults the customer email domain to example.com', () => {
+    expect(loadConfig({ PAYSTACK_SECRET_KEY: 'sk_test_x', MCP_TOKEN: 't' }).customerEmailDomain).toBe('example.com');
+  });
 });
