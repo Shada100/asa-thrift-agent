@@ -3,7 +3,7 @@ import type { Server } from 'node:http';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createApp } from '../src/app.js';
+import { createApp } from '../src/http.js';
 import { createShop, type Shop } from '../src/shop.js';
 import { MemoryStore } from '../src/store.js';
 import { FakePaystack, testConfig } from './fakes.js';

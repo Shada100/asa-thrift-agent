@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createApp } from '../src/app.js';
+import { createApp } from '../src/http.js';
 import { createShop } from '../src/shop.js';
 import { MemoryStore } from '../src/store.js';
 import { FakePaystack, testConfig } from './fakes.js';

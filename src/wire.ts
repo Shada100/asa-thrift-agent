@@ -1,5 +1,5 @@
 import { Redis } from '@upstash/redis';
-import { createApp } from './app.js';
+import { createApp } from './http.js';
 import { loadConfig } from './config.js';
 import { createPaystack } from './paystack.js';
 import { createShop } from './shop.js';

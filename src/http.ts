@@ -23,6 +23,10 @@ function tokenMatches(header: string | undefined, token: string) {
 export function createApp({ shop, store, config }: Deps) {
   const app = express();
 
+  app.get('/', (_req, res) => {
+    res.type('text').send('Àṣà Thrift tool server. Chord talks to /mcp, Paystack to /paystack/webhook.');
+  });
+
   app.get('/health', (_req, res) => {
     res.json({ ok: true, mode: config.paystackSecret.startsWith('sk_test_') ? 'test' : 'live' });
   });
