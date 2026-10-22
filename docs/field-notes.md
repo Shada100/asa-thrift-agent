@@ -2,24 +2,38 @@
 
 Three Chord problems first, the ones that cost the most time or would cost the next builder. Then what Paystack taught me, then the small stuff. Everything here happened on 22 October 2026 while building and running this agent. Where another builder had already reported something publicly, I say so and what I saw myself.
 
-## 1. The agent made up a mistake, and I couldn't see what it had actually done
+## 1. The agent kept "confessing" to mistakes it never made, because it can't see its own past tool calls
 
-**What happened.** Partway through the simulator run, after a wrong-amount transfer, the customer said "I don pay again, abeg check". The reply opened with:
+**What happened.** Four times, the agent told a customer it had lied earlier:
+- *"I owe you a correction, Tolu… I hadn't actually checked before sending them."* (after a wrong-amount transfer; screenshot [3-wrong-amount-then-paid.jpg](screenshots/3-wrong-amount-then-paid.jpg))
+- *"Earlier I told you the order was cancelled, but I hadn't actually cancelled it at that point."* (in a new chat, after a real cancel)
+- *"I can't confirm that my earlier cancellation actually went through, since I never ran it."*
+- *"Correction to what I said earlier: the hold on the skirt was real"* (same session, one message later)
 
-> "I owe you a correction, Tolu. My earlier replies saying Paystack hadn't received anything were wrong. I hadn't actually checked before sending them."
+For a payments agent this is the worst thing it can say. The customer stops believing every confirmation after it.
 
-If that were true, it would break the one rule this agent exists for: never answer about payment without asking Paystack. Earlier, in a separate test chat, it had apologised "for the scare" over something I never said.
+**How I found the cause.**
+1. *Were the claims true?* No.
+   - Vercel's request logs show a tool call for every "I've paid" (12:59:06, 13:04:00, 13:07:46 UTC).
+   - For the cancel, Paystack's product record shows `updatedAt 14:17:23` with quantity back to 1, the same second as the cancel's tool call.
+2. *Could I see the conversation?* No.
+   - `GET /v1/threads/{id}/turns` → `403 Missing required permission: thread:read`.
+   - `GET …/teammates/{id}/memories` → `403 Missing required permission: memory:read`.
+   - The key screen offers neither permission.
+3. *Reproduce it.* I replayed it over `/v1/external-chat/messages`: checkout, cancel, then a new session for the same sender. Two of four replies confessed, and the wording gave the mechanism away: *"since I never ran it"*, *"No order or payment account has been set up for you in this chat."*
+   - My reading: the replayed history has the **text** of the agent's earlier replies but not the **tool calls** behind them.
+   - So the model sees itself quoting an account number with no tool call in view, and the skill says never invent anything. It concludes its own message was invented, and "corrects" it.
+4. *Is it my skill wording?* I had quoted the forbidden phrases, which can prime a model to say them. I rewrote the rule positively and nothing changed, so that wasn't the cause.
 
-(Screenshot: [3-wrong-amount-then-paid.jpg](screenshots/3-wrong-amount-then-paid.jpg).)
-
-**How I found the cause.** I tried to read the conversation from the API: `GET /v1/threads/{id}/turns` returned `403 Missing required permission: thread:read`. The API key screen has no Threads scope to grant. So I went to my own server instead. Vercel's request logs show a `POST /mcp` tool call at 12:59:06, 13:04:00 and 13:07:46 UTC, one for each "I've paid" message. The agent had checked every time. The answer changed because Paystack's answer changed (see Paystack note A), and the model invented a past failure to explain the difference.
-
-**What I did.** I added a skill rule: when a new check gives a different answer, give the new result and never say earlier messages were wrong. I published it as skill v3 through the Skills API (`npm run chord -- publish-skill`).
+**What I did.**
+- **The tools now carry their own history.** A repeat cancel used to answer `cancelled` again, as if it had just happened. Now it returns `alreadyCancelled: true, cancelledAtLagos: "3:35pm"`. A cancelled order no longer reads as "expired" either (tests in `tests/shop.payment.test.ts`).
+- **The skill tells the model exactly what it can't see.** Earlier replies quoting an order ref, account number or cancellation came from real tool calls it can't see any more. When in doubt, call `check_payment` or `cancel_checkout` with the ref.
+- **Result:** across three replays of the same scenario, 0 of 12 replies made up a mistake, against 4 of 8 before. The agent now checks and says *"cancelled at 3:35pm, so you're all set."*
 
 **What I'd change in Chord.**
-- Offer `thread:read` on the API key screen. Today a builder's key can send messages but can't read the conversation it's in.
-- In each turn's `steps` from `/v1/external-chat/messages`, include tool *results*, not only tool names. That would have answered this in seconds without my server logs.
-- Consider telling the model, in the tool-result framing, that each call is a fresh read of an external system. It might stop the urge to reconcile.
+- Include previous turns' tool calls and results in the replayed history, or at least a one-line summary per call.
+- Offer `thread:read` and `memory:read` on the API key screen.
+- Put tool *results*, not just tool names, in the `steps` that `/v1/external-chat/messages` returns. With those, this would have been a ten-minute diagnosis instead of an afternoon.
 
 ## 2. Pinning a teammate to its tool server is API-only, and the API won't give you the id
 
