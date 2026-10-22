@@ -31,7 +31,7 @@ A full run in the TSG WhatsApp simulator, 22 Oct 2026: availability, a haggle, t
 ```bash
 npm install
 cp .env.example .env     # Paystack test secret key, Chord key, and a random MCP_TOKEN
-npm test                 # 83 tests, Paystack faked, no network
+npm test                 # 96 tests, Paystack faked, no network
 npm run seed             # puts the 10 shop items into your Paystack test account
 npm run dev              # tool server on http://localhost:8787 (holds in memory)
 npm run smoke -- http://localhost:8787 --checkout
