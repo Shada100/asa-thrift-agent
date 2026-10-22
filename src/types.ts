@@ -27,6 +27,9 @@ export interface Order {
   state: OrderState;
   createdAt: string;
   note?: string;
+  // when and why the hold ended, so a repeat question gets the real history back
+  releasedAt?: string;
+  releaseReason?: 'cancelled' | 'expired' | 'failed';
 }
 
 export type CheckoutResult =
@@ -70,6 +73,8 @@ export interface PaymentResult {
   holdUntilLagos?: string;
   itemStillAvailable?: boolean;
   bouncedAtLagos?: string;
+  alreadyCancelled?: boolean;
+  cancelledAtLagos?: string;
   otherOpenOrders?: { orderRef: string; item: string }[];
   message: string;
 }

@@ -295,7 +295,7 @@ export function createShop({ paystack, store, config, now = () => new Date() }: 
   }
 
   // put the unit back on sale. if Paystack won't take the change, the hold stays and the next sweep tries again.
-  async function release(ref: string): Promise<{ released: boolean; available: boolean; productId?: number }> {
+  async function release(ref: string, reason: 'cancelled' | 'expired' | 'failed'): Promise<{ released: boolean; available: boolean; productId?: number }> {
     let productId: number | undefined;
     let released = false;
     await underOrderLock(ref, async (o) => {
@@ -305,7 +305,7 @@ export function createShop({ paystack, store, config, now = () => new Date() }: 
         return busy; // nothing to do, someone already moved it on
       }
       if ((await changeStock(o.productId, 1)) === 'failed') return busy;
-      await store.putOrder({ ...o, state: 'released' });
+      await store.putOrder({ ...o, state: 'released', releasedAt: now().toISOString(), releaseReason: reason });
       released = true;
       return busy;
     });
@@ -330,11 +330,12 @@ export function createShop({ paystack, store, config, now = () => new Date() }: 
     if (v.status === 'success') return settle(o.ref, v);
 
     if (o.state === 'released') {
+      if (o.releaseReason === 'cancelled') return alreadyCancelled(o);
       return { state: 'expired', ...facts(o), itemStillAvailable: await stillAvailable(o.productId), message: 'This hold already expired and the account number no longer works.' };
     }
 
     if (v.status === 'failed' || v.status === 'reversed') {
-      const r = await release(o.ref);
+      const r = await release(o.ref, 'failed');
       return { state: 'failed', ...facts(o), itemStillAvailable: r.available, message: 'Paystack marked this payment as failed. The hold is released.' };
     }
 
@@ -359,7 +360,7 @@ export function createShop({ paystack, store, config, now = () => new Date() }: 
     if (!expired(o)) {
       return { state: 'not_yet', ...facts(o), holdUntil: o.expiresAt, holdUntilLagos: lagosTime(o.expiresAt), message: 'Paystack has not received the transfer yet.' };
     }
-    const r = await release(o.ref);
+    const r = await release(o.ref, 'expired');
     return { state: 'expired', ...facts(o), itemStillAvailable: r.available, message: 'The hold ran out before Paystack received the money. The account number no longer works.' };
   }
 
@@ -394,14 +395,29 @@ export function createShop({ paystack, store, config, now = () => new Date() }: 
     if (o.state === 'paid' || o.state === 'needs_owner') {
       return sendToOwner(o, 'The customer wants to cancel an order that is already paid. Refunds are handled by the owner.');
     }
-    if (o.state === 'held') {
-      // the money may have landed while they were deciding
-      const v = await verifyOrUnavailable(o);
-      if ('state' in v) return { ...v, message: 'Could not reach Paystack to check before cancelling. Nothing has changed.' };
-      if (v.status === 'success') return settle(o.ref, v);
+    if (o.state === 'released') {
+      // asking twice is normal; say what already happened instead of pretending we just did it
+      if (o.releaseReason === 'cancelled') return alreadyCancelled(o);
+      const when = o.releasedAt ? ` at ${lagosTime(o.releasedAt)}` : '';
+      return { state: 'expired', ...facts(o), message: `This hold had already expired${when}, so there was nothing to cancel. Nothing changed now.` };
     }
-    await release(o.ref);
-    return { state: 'cancelled', ...facts(o), message: 'Hold cancelled and the item is back on sale.' };
+    // the money may have landed while they were deciding
+    const v = await verifyOrUnavailable(o);
+    if ('state' in v) return { ...v, message: 'Could not reach Paystack to check before cancelling. Nothing has changed.' };
+    if (v.status === 'success') return settle(o.ref, v);
+    await release(o.ref, 'cancelled');
+    return { state: 'cancelled', ...facts(o), alreadyCancelled: false, message: 'Hold cancelled just now and the item is back on sale.' };
+  }
+
+  function alreadyCancelled(o: Order): PaymentResult {
+    const at = o.releasedAt ? lagosTime(o.releasedAt) : undefined;
+    return {
+      state: 'cancelled',
+      ...facts(o),
+      alreadyCancelled: true,
+      ...(at ? { cancelledAtLagos: at } : {}),
+      message: `This order was already cancelled${at ? ` at ${at}` : ''}, when the customer asked, and the piece went back on sale then. Nothing changed now. Tell them not to send money to that account.`,
+    };
   }
 
   async function sweepExpired(): Promise<number> {
@@ -419,7 +435,7 @@ export function createShop({ paystack, store, config, now = () => new Date() }: 
         // anything else: we can't tell, so leave it held and try again next time.
         if (!(err instanceof PaystackError && err.kind === 'not_found')) continue;
       }
-      if ((await release(o.ref)).released) released++;
+      if ((await release(o.ref, 'expired')).released) released++;
     }
     return released;
   }

@@ -180,6 +180,35 @@ describe('cancelCheckout', () => {
   });
 });
 
+describe('cancel history', () => {
+  it('cancelling twice says it was already cancelled, with the time, and leaves stock alone', async () => {
+    const { clock, shop, ref, qty } = await setup();
+    clock.now = minutes(1);
+    await shop.cancelCheckout(ref);
+    clock.now = minutes(10);
+    const again = await shop.cancelCheckout(ref);
+    expect(again).toMatchObject({ state: 'cancelled', alreadyCancelled: true, cancelledAtLagos: '12:01pm' });
+    expect(again.message).toMatch(/already cancelled/i);
+    expect(qty()).toBe(1);
+  });
+
+  it('checking a cancelled order says cancelled, not expired', async () => {
+    const { clock, shop, ref } = await setup();
+    clock.now = minutes(1);
+    await shop.cancelCheckout(ref);
+    clock.now = minutes(10);
+    expect(await shop.checkPayment({ orderRef: ref })).toMatchObject({ state: 'cancelled', alreadyCancelled: true, cancelledAtLagos: '12:01pm' });
+  });
+
+  it('an order that ran out of time still reads as expired', async () => {
+    const { clock, shop, ref } = await setup();
+    clock.now = minutes(31);
+    await shop.sweepExpired();
+    expect((await shop.checkPayment({ orderRef: ref })).state).toBe('expired');
+    expect((await shop.cancelCheckout(ref)).message).toMatch(/expired/i);
+  });
+});
+
 describe('sweepExpired', () => {
   it('releases expired holds', async () => {
     const { clock, shop, qty } = await setup();
