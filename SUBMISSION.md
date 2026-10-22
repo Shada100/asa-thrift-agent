@@ -14,7 +14,7 @@ This agent takes the customer from "is it still available?" to a paid sale. It h
 
 ## Links
 
-- **Try it:** the Àṣà Thrift teammate is live on my Chord account. Test-chat link: *sent separately*
+- **Try it:** the Àṣà Thrift teammate is live on my Chord account. Test-chat link: *in the chord account*
 - **Recording (3 min):** *link*
 - **Code:** this repo. Start with the [README](README.md)
 - **[Deployment field notes](docs/field-notes.md)**
