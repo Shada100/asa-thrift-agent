@@ -40,7 +40,7 @@ The customer always sends the next message. The agent never has to start a conve
   - *Payment:* Paystack Pay with Transfer (`POST /charge` with a `bank_transfer` object). It returns a temporary account number tied to one transaction and an exact amount, with an expiry between 15 minutes and 8 hours. In test mode the bank is "Test Bank".
   - *Confirmation:* `GET /transaction/verify/:reference`. Use `data.status` and `data.amount`, never the top-level `status`, which only means the API call worked. Paystack sends `bank.transfer.rejected` when a customer sends the wrong amount or is flagged by fraud checks, and `charge.success` on payment. Webhooks may arrive more than once.
 - **The tool server.** A small TypeScript MCP server (Streamable HTTP, public HTTPS, bearer auth), the only way Chord can call custom tools. It owns all money and stock logic.
-- **Holds.** The owner also sells outside the agent, in Instagram DMs and in person (user's answer). So a held item must look unavailable in Paystack too. Starting a checkout reduces the item's Paystack `quantity` by one immediately. A confirmed payment keeps it reduced. An expired or cancelled hold adds one back, relative to the current quantity, so a stock change the owner made by hand isn't overwritten. Paystack has no "reserved" state, so the tool server also keeps its own record of holds and orders: who holds what, until when, and which charge reference. That record must survive restarts and redeploys. Storage choice is left to the builder.
+- **Holds.** The owner also sells outside the agent, in Instagram DMs and in person. So a held item must look unavailable in Paystack too. Starting a checkout reduces the item's Paystack `quantity` by one immediately. A confirmed payment keeps it reduced. An expired or cancelled hold adds one back, relative to the current quantity, so a stock change the owner made by hand isn't overwritten. Paystack has no "reserved" state, so the tool server also keeps its own record of holds and orders: who holds what, until when, and which charge reference. That record must survive restarts and redeploys. Storage choice is left to the builder.
 - **Chord.** One teammate made from a skill we write, assigned to this MCP server only, tested in the WhatsApp simulator (chat.tsglabs.dev). Human handover and escalation email are Chord's built-in features.
 
 ## The tools (what the agent can call)
@@ -95,7 +95,7 @@ A webhook receiver for Paystack events (`charge.success`, `bank.transfer.rejecte
 - Account details laid out so they're easy to copy: bank, account number and amount each on their own line.
 - Confirmations are certain and specific (amount, item, "confirmed by Paystack"). Waiting messages are calm and give a time.
 
-## Known platform constraints (from the docs and another builder's notes, not yet verified by us)
+## Known platform constraints (from the docs and another builder's public notes; what we actually saw is in field-notes.md)
 
 - Chord custom tools are remote MCP servers only, at a public HTTPS URL. Loopback and private addresses are blocked.
 - A teammate with no MCP assignment gets every enabled server in the workspace. Pin the teammate to this server (`set_mcp_server_ids`). The other builder found this was API-only.
@@ -103,17 +103,21 @@ A webhook receiver for Paystack events (`charge.success`, `bank.transfer.rejecte
 - Messaging a customer first through Chord needs a conversation id that's hard to obtain, which is why the flow is always customer-initiated.
 - Things to check first, because the plan depends on them: (1) the simulator reaches our teammate and the teammate calls our tool; (2) how to simulate a customer's transfer into a Pay with Transfer account in Paystack test mode, and what verify returns for paid, pending, expired and wrong-amount cases; (3) whether Paystack test mode charges fees on Pay with Transfer that change the amount the customer must send; (4) that human handover works from the simulator and the owner gets notified.
 
-## Decisions made so far
+## Key decisions
 
-- **Made with the user:** business type (Lagos thrift/fashion seller), customers pay by transfer because their card isn't on them, the demo starts at checkout with the account number, the confirmation must sound certain, the agent updates stock only after confirmed payment, no discounts (the owner edits prices in Paystack; persistent haggling escalates to a human).
-- **My calls (the user can override):** the invented shop "Àṣà Thrift, Yaba"; Paystack Products as the stock list instead of a Sheet; Pay with Transfer instead of permanent virtual accounts; a 30-minute hold; one item per order; TypeScript MCP server; Chord's built-in handover and escalation email for owner alerts; the repo lives in `asa-thrift-agent/`.
+- **Paystack Products is the stock list**, not a Sheet or Airtable. The owner already uses the dashboard, and payments and stock can't drift apart.
+- **Pay with Transfer**, one account per order with an exact amount and an expiry, rather than permanent virtual accounts. Nothing to set up per customer, and a wrong amount is bounced by Paystack.
+- **Holds take stock off Paystack at checkout**, because the owner also sells in DMs and in person.
+- **No discounts.** The owner changes prices in Paystack; persistent hagglers go to the owner.
+- **One item per order, 30-minute holds.**
+- **The confirmation is confident and specific**, because it's only ever sent after Paystack confirms.
 
-## Fallbacks (my calls)
+## Fallbacks
 
 - **If Pay with Transfer can't be paid in test mode** (we can't simulate the incoming transfer, or verify never moves off pending), switch to a test Dedicated Virtual Account (`preferred_bank: "test-bank"`) for that customer. It's still a bank transfer and still confirmed by Paystack. If neither can be paid in test mode, use a Paystack checkout limited to the bank-transfer channel. In every case, **never forge or self-sign Paystack webhooks for the live demo**. The wrong-amount case may then only be shown in automated tests with a faked Paystack, and the field notes say so.
 - **If Chord's human handover doesn't work from the simulator**, the agent tells the customer plainly that the owner will need to pick this up and gives the shop's (invented) contact line. The gap goes in the field notes. No custom email tool unless it turns out to be cheap.
 
-## Owner notifications (my call)
+## Owner notifications
 
 - Every charge carries the order in its Paystack metadata: item, buyer name, delivery phone and order reference. A paid order is fully readable on the Paystack transaction page.
 - The owner learns about sales from Paystack's own merchant notifications and the dashboard. We build no notification system. Whether test mode sends those emails needs checking; the go-live note covers it either way.
@@ -127,4 +131,3 @@ A webhook receiver for Paystack events (`charge.success`, `bank.transfer.rejecte
 - How holds expire: lazily on the next lookup, or on a timer.
 - Whether to build the webhook receiver, based on what verify shows in test mode.
 - Test approach. Paystack should be fakeable in tests, so they run without network.
-- Project hygiene: no assistant or AI attribution anywhere in commits or files, and code comments written the way a person on the team would write them.
