@@ -83,7 +83,7 @@ describe('checkPayment', () => {
 
   it('rejected_wrong_amount when Paystack bounced the transfer', async () => {
     const { store, shop, ref } = await setup();
-    await store.markRejected(ref, 'amount did not match');
+    await store.markRejected(ref, 'amount did not match', '2026-10-22T11:05:00.000Z');
     expect(await shop.checkPayment({ orderRef: ref })).toMatchObject({ state: 'rejected_wrong_amount', holdUntil: '2026-10-22T11:30:00.000Z' });
   });
 
@@ -95,7 +95,7 @@ describe('checkPayment', () => {
 
   it('a correct payment after a rejected one still counts', async () => {
     const { paystack, store, shop, ref } = await setup();
-    await store.markRejected(ref, 'amount did not match');
+    await store.markRejected(ref, 'amount did not match', '2026-10-22T11:05:00.000Z');
     paystack.pay(ref);
     expect((await shop.checkPayment({ orderRef: ref })).state).toBe('paid');
   });

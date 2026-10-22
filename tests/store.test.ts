@@ -26,16 +26,24 @@ describe('MemoryStore', () => {
     expect(await s.once('paid:ASA-BBBBBB')).toBe(true);
   });
 
-  it('withLock turns away a second caller while the first is inside', async () => {
+  it('withLock makes a second caller wait its turn', async () => {
     const s = new MemoryStore();
+    const order: string[] = [];
     let release!: () => void;
-    const first = s.withLock('product:1', () => new Promise<string>((r) => (release = () => r('first'))));
-    const second = await s.withLock('product:1', async () => 'second');
-    expect(second).toBe('locked');
+    const first = s.withLock('product:1', () => new Promise<void>((r) => (release = () => { order.push('first'); r(); })));
+    const second = s.withLock('product:1', async () => { order.push('second'); });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(order).toEqual([]); // second is still waiting
     release();
-    expect(await first).toBe('first');
-    // and the lock is free again afterwards
-    expect(await s.withLock('product:1', async () => 'third')).toBe('third');
+    await Promise.all([first, second]);
+    expect(order).toEqual(['first', 'second']);
+  });
+
+  it('withLock gives up after waiting too long', async () => {
+    const s = new MemoryStore();
+    const hog = s.withLock('k', () => new Promise((r) => setTimeout(r, 200)));
+    expect(await s.withLock('k', async () => 'never', { waitMs: 30 })).toBe('locked');
+    await hog;
   });
 
   it('withLock releases even when the work throws', async () => {
@@ -71,8 +79,8 @@ describe('MemoryStore', () => {
   it('remembers rejected transfers', async () => {
     const s = new MemoryStore();
     expect(await s.getRejected('ASA-AAAAAA')).toBeNull();
-    await s.markRejected('ASA-AAAAAA', 'amount mismatch');
-    expect(await s.getRejected('ASA-AAAAAA')).toBe('amount mismatch');
+    await s.markRejected('ASA-AAAAAA', 'amount mismatch', '2026-10-22T13:05:00.000Z');
+    expect(await s.getRejected('ASA-AAAAAA')).toEqual({ reason: 'amount mismatch', at: '2026-10-22T13:05:00.000Z' });
   });
 
   it('hands back copies, so callers cannot edit stored orders by accident', async () => {

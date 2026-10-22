@@ -6,13 +6,27 @@ export interface Store {
   getOrder(ref: string): Promise<Order | null>;
   putOrder(o: Order): Promise<void>;
   findActiveOrderByPhone(phone: string): Promise<Order | null>;
+  ordersByPhone(phone: string): Promise<Order[]>; // newest first
   activeHolds(productId?: number): Promise<Order[]>;
   // true for exactly one caller per key. this is what stops double-processing.
   once(key: string, ttlSeconds?: number): Promise<boolean>;
-  withLock<T>(key: string, fn: () => Promise<T>): Promise<T | 'locked'>;
-  markRejected(ref: string, reason: string): Promise<void>;
-  getRejected(ref: string): Promise<string | null>;
+  // waits its turn (up to waitMs) rather than failing straight away
+  withLock<T>(key: string, fn: () => Promise<T>, opts?: LockOptions): Promise<T | 'locked'>;
+  markRejected(ref: string, reason: string, at: string): Promise<void>;
+  getRejected(ref: string): Promise<Rejection | null>;
 }
+
+export interface LockOptions {
+  waitMs?: number;
+}
+
+export interface Rejection {
+  reason: string;
+  at?: string;
+}
+
+const DEFAULT_WAIT_MS = 20_000;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const byNewest = (a: Order, b: Order) => b.createdAt.localeCompare(a.createdAt);
 
@@ -25,7 +39,7 @@ export class MemoryStore implements Store {
   private orders = new Map<string, Order>();
   private seen = new Set<string>();
   private locks = new Set<string>();
-  private rejected = new Map<string, string>();
+  private rejected = new Map<string, Rejection>();
 
   async getOrder(ref: string) {
     const o = this.orders.get(ref);
@@ -37,7 +51,11 @@ export class MemoryStore implements Store {
   }
 
   async findActiveOrderByPhone(phone: string) {
-    return pickForPhone([...this.orders.values()].filter((o) => o.customerPhone === phone).map((o) => ({ ...o })));
+    return pickForPhone(await this.ordersByPhone(phone));
+  }
+
+  async ordersByPhone(phone: string) {
+    return [...this.orders.values()].filter((o) => o.customerPhone === phone).map((o) => ({ ...o })).sort(byNewest);
   }
 
   async activeHolds(productId?: number) {
@@ -52,8 +70,12 @@ export class MemoryStore implements Store {
     return true;
   }
 
-  async withLock<T>(key: string, fn: () => Promise<T>) {
-    if (this.locks.has(key)) return 'locked' as const;
+  async withLock<T>(key: string, fn: () => Promise<T>, opts: LockOptions = {}) {
+    const giveUpAt = Date.now() + (opts.waitMs ?? DEFAULT_WAIT_MS);
+    while (this.locks.has(key)) {
+      if (Date.now() > giveUpAt) return 'locked' as const;
+      await sleep(2);
+    }
     this.locks.add(key);
     try {
       return await fn();
@@ -62,8 +84,8 @@ export class MemoryStore implements Store {
     }
   }
 
-  async markRejected(ref: string, reason: string) {
-    this.rejected.set(ref, reason);
+  async markRejected(ref: string, reason: string, at: string) {
+    this.rejected.set(ref, { reason, at });
   }
 
   async getRejected(ref: string) {
@@ -89,9 +111,13 @@ export class RedisStore implements Store {
   }
 
   async findActiveOrderByPhone(phone: string) {
+    return pickForPhone(await this.ordersByPhone(phone));
+  }
+
+  async ordersByPhone(phone: string) {
     const refs = await this.redis.lrange<string>(`phone:${phone}`, 0, 19);
     const orders = await Promise.all(refs.map((r) => this.getOrder(r)));
-    return pickForPhone(orders.filter((o): o is Order => !!o));
+    return orders.filter((o): o is Order => !!o).sort(byNewest);
   }
 
   async activeHolds(productId?: number) {
@@ -104,11 +130,17 @@ export class RedisStore implements Store {
     return (await this.redis.set(`once:${key}`, 1, { nx: true, ex: ttlSeconds })) === 'OK';
   }
 
-  async withLock<T>(key: string, fn: () => Promise<T>) {
+  async withLock<T>(key: string, fn: () => Promise<T>, opts: LockOptions = {}) {
     const token = randomUUID();
-    // 10s is far longer than a checkout should take; it only matters if we crash mid-way
-    const got = await this.redis.set(`lock:${key}`, token, { nx: true, px: 10_000 });
-    if (got !== 'OK') return 'locked' as const;
+    const giveUpAt = Date.now() + (opts.waitMs ?? DEFAULT_WAIT_MS);
+    let backoff = 50;
+    // ttl has to outlast the slowest checkout: three paystack calls at 8s each, a retry,
+    // and a put-back. 60s covers that; it only matters if we die holding the lock.
+    while ((await this.redis.set(`lock:${key}`, token, { nx: true, px: 60_000 })) !== 'OK') {
+      if (Date.now() > giveUpAt) return 'locked' as const;
+      await sleep(backoff);
+      backoff = Math.min(backoff * 2, 500);
+    }
     try {
       return await fn();
     } finally {
@@ -116,11 +148,13 @@ export class RedisStore implements Store {
     }
   }
 
-  async markRejected(ref: string, reason: string) {
-    await this.redis.set(`rejected:${ref}`, reason, { ex: MONTH });
+  async markRejected(ref: string, reason: string, at: string) {
+    await this.redis.set(`rejected:${ref}`, { reason, at }, { ex: MONTH });
   }
 
   async getRejected(ref: string) {
-    return (await this.redis.get<string>(`rejected:${ref}`)) ?? null;
+    const v = await this.redis.get<Rejection | string>(`rejected:${ref}`);
+    // early records were plain strings
+    return typeof v === 'string' ? { reason: v } : (v ?? null);
   }
 }

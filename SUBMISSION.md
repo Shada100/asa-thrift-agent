@@ -1,5 +1,7 @@
 # TSG Labs build exercise: Àṣà Thrift checkout agent
 
+Funmi Shada
+
 **Role:** Forward-deployed Engineering
 
 **The business and the problem.** Àṣà Thrift (made up) is a one-person thrift and vintage shop in Yaba, Lagos. It sells one-of-one pieces on Instagram and WhatsApp, and customers pay by bank transfer because their card usually isn't on them.

@@ -69,5 +69,7 @@ export interface PaymentResult {
   holdUntil?: string;
   holdUntilLagos?: string;
   itemStillAvailable?: boolean;
+  bouncedAtLagos?: string;
+  otherOpenOrders?: { orderRef: string; item: string }[];
   message: string;
 }

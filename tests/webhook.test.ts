@@ -109,6 +109,6 @@ describe('paystack webhook', () => {
     await post(base, evt('1111111111'));
     // same length body, different transfer, must still be processed
     await post(base, { ...evt('2222222222'), data: { bank_transfer: { ...evt('2222222222').data.bank_transfer, reference: co.orderRef } } });
-    expect(await store.getRejected(co.orderRef)).toBe('incorrect amount sent');
+    expect(await store.getRejected(co.orderRef)).toMatchObject({ reason: 'incorrect amount sent' });
   });
 });

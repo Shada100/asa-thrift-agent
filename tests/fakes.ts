@@ -8,6 +8,11 @@ export class FakePaystack implements Paystack {
   failNextCharge: PaystackError | null = null;
   failVerify: PaystackError | null = null;
   failProducts: PaystackError | null = null;
+  failNextSetQuantity: PaystackError | null = null;
+  // the nasty one: the PUT lands at Paystack but we only see a timeout
+  applyThenFailNextSetQuantity: PaystackError | null = null;
+  // random latency per call, so concurrent flows interleave like they do for real
+  maxDelayMs = 0;
   private nextAccount = 1231800000;
 
   addProduct(p: Partial<PsProduct> & { name: string; price: number }) {
@@ -42,12 +47,18 @@ export class FakePaystack implements Paystack {
     this.charges.get(reference)!.status = status;
   }
 
+  private async lag() {
+    if (this.maxDelayMs) await new Promise((r) => setTimeout(r, Math.random() * this.maxDelayMs));
+  }
+
   async listProducts() {
+    await this.lag();
     if (this.failProducts) throw this.failProducts;
     return [...this.products.values()].map((p) => ({ ...p }));
   }
 
   async getProduct(id: number) {
+    await this.lag();
     if (this.failProducts) throw this.failProducts;
     const p = this.products.get(id);
     if (!p) throw new PaystackError('Product not found', 'not_found', 404);
@@ -55,14 +66,26 @@ export class FakePaystack implements Paystack {
   }
 
   async setQuantity(id: number, quantity: number) {
+    await this.lag();
+    if (this.failNextSetQuantity) {
+      const e = this.failNextSetQuantity;
+      this.failNextSetQuantity = null;
+      throw e;
+    }
     const p = this.products.get(id);
     if (!p) throw new PaystackError('Product not found', 'not_found', 404);
     p.quantity = quantity;
     p.in_stock = quantity > 0;
+    if (this.applyThenFailNextSetQuantity) {
+      const e = this.applyThenFailNextSetQuantity;
+      this.applyThenFailNextSetQuantity = null;
+      throw e;
+    }
     return { ...p };
   }
 
   async createTransferCharge(a: TransferChargeArgs): Promise<PsTransferCharge> {
+    await this.lag();
     this.chargeCalls++;
     if (this.failNextCharge) {
       const e = this.failNextCharge;
@@ -82,6 +105,7 @@ export class FakePaystack implements Paystack {
   }
 
   async verify(reference: string): Promise<PsVerify> {
+    await this.lag();
     if (this.failVerify) throw this.failVerify;
     const c = this.charges.get(reference);
     if (!c) throw new PaystackError('Transaction reference not found', 'not_found', 404);

@@ -86,7 +86,7 @@ export function createApp({ shop, store, config }: Deps) {
       } else if (evt.event === 'bank.transfer.rejected') {
         const ref = await refForRejection(data);
         const why = data.bank_transfer?.message ?? data.reason ?? data.gateway_response ?? data.message ?? 'transfer rejected';
-        if (ref) await store.markRejected(ref, String(why));
+        if (ref) await store.markRejected(ref, String(why), new Date().toISOString());
         else console.warn('bank.transfer.rejected for an order we could not match');
       }
     } catch (err) {
