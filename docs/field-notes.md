@@ -41,7 +41,7 @@ For a payments agent this is the worst thing it can say. The customer stops beli
 
 **How I found the cause.** `GET /v1/workspaces/{ws}/mcp-servers` → `403 Missing required permission: mcp:read`. The key screen offers Chat, Knowledge, Teammates, Procedures, Usage and Webhooks, but no MCP scopes. The app doesn't show the id on the server's page either. The other builder hit this too; I confirmed it with my own key.
 
-**What I did.** I had the owner open the browser's network tab on the Custom tools page and copy the id from the `mcp-servers` response. Then `npm run chord -- pin <teammate> <server>` and a read-back: `mcp_server_ids = ["mcp-e610c1f6-…"]`.
+**What I did.** I opened the browser's network tab on the Custom tools page and copied the id from the `mcp-servers` response. Then `npm run chord -- pin <teammate> <server>` and a read-back: `mcp_server_ids = ["mcp-e610c1f6-…"]`.
 
 **What's still wrong.** The workspace's default "Chord Assistant" keeps an empty assignment, which means it *also* gets the shop's payment tools. The docs are explicit that an empty list "is not a way to deny MCP access". There is no way to say "none".
 
@@ -78,7 +78,7 @@ That's the model talking to itself, delivered to a customer.
 - An untouched transfer charge reads `ongoing`, not `pending` or `abandoned`.
 - One flipped to `abandoned` ("Can't requery test transaction") 13 minutes *before* its account expired.
 
-I stopped keying anything off status names except `success`. Expiry is decided by our own clock against the `account_expires_at` Paystack returned.
+I stopped keying anything off status names except `success`. Expiry is decided by my server's own clock against the `account_expires_at` Paystack returned.
 
 **C. Paystack rejects `.test` emails.** `POST /charge` returned `400 "email" must be a valid email` for `…@asathrift.test`. Customers on WhatsApp don't have an email anyway, so each order uses `<ref>@example.com`, which is reserved so no receipt reaches a real person.
 
@@ -95,7 +95,7 @@ I stopped keying anything off status names except `success`. Expiry is decided b
   - *Type definitions.* The builder failed with `TS2688: Cannot find type definition file for 'node'` on TypeScript 7.0.2. I reproduced it with a local `vercel build` and pinned 5.9.
   - *Express mode.* Vercel quietly ran the project in Express mode from `src/app.ts`, which returned 500 on `/` ("Invalid export found"). When I renamed the file, the build demanded an entry that imports express. It now lives at `src/server.ts`.
   - *`.gitignore`.* `vercel link` appended `.env*` to `.gitignore`, which silently re-ignored `.env.example`.
-- **Upstash on the Vercel Marketplace** needed the account owner to accept terms in a browser (`integration_terms_acceptance_required`) before the CLI could provision it.
+- **Upstash on the Vercel Marketplace** stopped with `integration_terms_acceptance_required`: I had to accept Upstash's terms in the browser before the CLI could provision it.
 
 ## What I'd build next
 

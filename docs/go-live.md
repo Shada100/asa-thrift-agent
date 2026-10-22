@@ -5,7 +5,7 @@
 **What it doesn't do.** Bargain (persistent hagglers come to you), book delivery, refund, take cards, or sell more than one item per order. Complaints and anything it's unsure about are handed to you.
 
 **Before real customers**
-1. Paystack approves Àṣà Thrift as a registered business with Pay with Transfer, and we swap in the live key. It refuses live keys today, on purpose.
+1. Paystack approves Àṣà Thrift as a registered business with Pay with Transfer, and I swap in the live key. It refuses live keys today, on purpose.
 2. A real WhatsApp number is connected to the teammate in Chord.
 3. Paystack transaction alerts go to your phone. That's how you know what to deliver.
 4. Chord's escalation email goes to an inbox you check during shop hours.
@@ -16,6 +16,6 @@
 - **Wrong amount sent:** Paystack returns it to the customer's bank, and the agent asks for the exact amount.
 - **Hold runs out:** the piece goes back on sale.
 - **Paid after the piece sold elsewhere:** it's handed to you to refund from the dashboard.
-- **Nobody is alerted automatically if the tool server stops.** We add a phone alert before launch.
+- **Nobody is alerted automatically if the tool server stops.** I'll add a phone alert before launch.
 
 **First week:** run it on Chord's "Work with me" setting so you see every reply, then switch to "Act independently".

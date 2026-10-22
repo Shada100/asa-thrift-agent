@@ -41,7 +41,7 @@ The customer always sends the next message. The agent never has to start a conve
   - *Confirmation:* `GET /transaction/verify/:reference`. Use `data.status` and `data.amount`, never the top-level `status`, which only means the API call worked. Paystack sends `bank.transfer.rejected` when a customer sends the wrong amount or is flagged by fraud checks, and `charge.success` on payment. Webhooks may arrive more than once.
 - **The tool server.** A small TypeScript MCP server (Streamable HTTP, public HTTPS, bearer auth), the only way Chord can call custom tools. It owns all money and stock logic.
 - **Holds.** The owner also sells outside the agent, in Instagram DMs and in person. So a held item must look unavailable in Paystack too. Starting a checkout reduces the item's Paystack `quantity` by one immediately. A confirmed payment keeps it reduced. An expired or cancelled hold adds one back, relative to the current quantity, so a stock change the owner made by hand isn't overwritten. Paystack has no "reserved" state, so the tool server also keeps its own record of holds and orders: who holds what, until when, and which charge reference. That record must survive restarts and redeploys. Storage choice is left to the builder.
-- **Chord.** One teammate made from a skill we write, assigned to this MCP server only, tested in the WhatsApp simulator (chat.tsglabs.dev). Human handover and escalation email are Chord's built-in features.
+- **Chord.** One teammate made from a skill I write, assigned to this MCP server only, tested in the WhatsApp simulator (chat.tsglabs.dev). Human handover and escalation email are Chord's built-in features.
 
 ## The tools (what the agent can call)
 
@@ -95,13 +95,13 @@ A webhook receiver for Paystack events (`charge.success`, `bank.transfer.rejecte
 - Account details laid out so they're easy to copy: bank, account number and amount each on their own line.
 - Confirmations are certain and specific (amount, item, "confirmed by Paystack"). Waiting messages are calm and give a time.
 
-## Known platform constraints (from the docs and another builder's public notes; what we actually saw is in field-notes.md)
+## Known platform constraints (from the docs and another builder's public notes; what I actually saw is in field-notes.md)
 
 - Chord custom tools are remote MCP servers only, at a public HTTPS URL. Loopback and private addresses are blocked.
 - A teammate with no MCP assignment gets every enabled server in the workspace. Pin the teammate to this server (`set_mcp_server_ids`). The other builder found this was API-only.
 - Tool calls reportedly carry no sender, conversation or channel information, so the tool can't identify the WhatsApp customer. The order reference from the conversation is what ties a payment check to an order.
 - Messaging a customer first through Chord needs a conversation id that's hard to obtain, which is why the flow is always customer-initiated.
-- Things to check first, because the plan depends on them: (1) the simulator reaches our teammate and the teammate calls our tool; (2) how to simulate a customer's transfer into a Pay with Transfer account in Paystack test mode, and what verify returns for paid, pending, expired and wrong-amount cases; (3) whether Paystack test mode charges fees on Pay with Transfer that change the amount the customer must send; (4) that human handover works from the simulator and the owner gets notified.
+- Things to check first, because the plan depends on them: (1) the simulator reaches my teammate and the teammate calls my tool; (2) how to simulate a customer's transfer into a Pay with Transfer account in Paystack test mode, and what verify returns for paid, pending, expired and wrong-amount cases; (3) whether Paystack test mode charges fees on Pay with Transfer that change the amount the customer must send; (4) that human handover works from the simulator and the owner gets notified.
 
 ## Key decisions
 
@@ -114,16 +114,16 @@ A webhook receiver for Paystack events (`charge.success`, `bank.transfer.rejecte
 
 ## Fallbacks
 
-- **If Pay with Transfer can't be paid in test mode** (we can't simulate the incoming transfer, or verify never moves off pending), switch to a test Dedicated Virtual Account (`preferred_bank: "test-bank"`) for that customer. It's still a bank transfer and still confirmed by Paystack. If neither can be paid in test mode, use a Paystack checkout limited to the bank-transfer channel. In every case, **never forge or self-sign Paystack webhooks for the live demo**. The wrong-amount case may then only be shown in automated tests with a faked Paystack, and the field notes say so.
+- **If Pay with Transfer can't be paid in test mode** (I can't simulate the incoming transfer, or verify never moves off pending), switch to a test Dedicated Virtual Account (`preferred_bank: "test-bank"`) for that customer. It's still a bank transfer and still confirmed by Paystack. If neither can be paid in test mode, use a Paystack checkout limited to the bank-transfer channel. In every case, **never forge or self-sign Paystack webhooks for the live demo**. The wrong-amount case may then only be shown in automated tests with a faked Paystack, and the field notes say so.
 - **If Chord's human handover doesn't work from the simulator**, the agent tells the customer plainly that the owner will need to pick this up and gives the shop's (invented) contact line. The gap goes in the field notes. No custom email tool unless it turns out to be cheap.
 
 ## Owner notifications
 
 - Every charge carries the order in its Paystack metadata: item, buyer name, delivery phone and order reference. A paid order is fully readable on the Paystack transaction page.
-- The owner learns about sales from Paystack's own merchant notifications and the dashboard. We build no notification system. Whether test mode sends those emails needs checking; the go-live note covers it either way.
+- The owner learns about sales from Paystack's own merchant notifications and the dashboard. I'm not building a notification system. Whether test mode sends those emails needs checking; the go-live note covers it either way.
 - Handover (haggling, complaints, edge cases) is Chord's escalation path. It is not used for ordinary sales, because a handover takes the thread away from the agent.
 
-## Left to the builder
+## Decided during the build
 
 - Hosting provider and storage for holds and orders (it must be public HTTPS, must not sleep between calls during review, and holds must persist).
 - Exact tool names, schemas and response shapes.
