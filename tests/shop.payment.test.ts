@@ -52,7 +52,7 @@ describe('checkPayment', () => {
 
   it('not_yet with the hold time while the transfer has not landed', async () => {
     const { shop, ref } = await setup();
-    expect(await shop.checkPayment({ orderRef: ref })).toMatchObject({ state: 'not_yet', holdUntil: '2026-10-22T11:30:00.000Z' });
+    expect(await shop.checkPayment({ orderRef: ref })).toMatchObject({ state: 'not_yet', holdUntil: '2026-10-22T11:30:00.000Z', holdUntilLagos: '12:30pm' });
   });
 
   it('never trusts the customer: no Paystack success, no sale', async () => {

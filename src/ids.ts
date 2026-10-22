@@ -24,3 +24,10 @@ export function normalisePhone(input: string): string | null {
   else if (d.startsWith('0')) d = d.slice(1);
   return /^[789]\d{9}$/.test(d) ? `+234${d}` : null;
 }
+
+const lagosClock = new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit', hour12: true });
+
+// "2:11pm". the model shouldn't be doing timezone maths in front of customers.
+export function lagosTime(iso: string): string {
+  return lagosClock.format(new Date(iso)).replace(/\s/g, '').toLowerCase();
+}

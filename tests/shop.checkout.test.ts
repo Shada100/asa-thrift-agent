@@ -60,7 +60,7 @@ describe('startCheckout', () => {
     const { paystack, shop, jacket } = setup();
     const r = await shop.startCheckout({ itemId: jacket, ...tolu });
     paystack.products.get(jacket)!.price = 2500000; // owner edits the price afterwards
-    expect(r).toMatchObject({ ok: true, amountNaira: 18500, bankName: 'Test Bank', reused: false, expiresAt: '2026-10-22T11:30:00.000Z' });
+    expect(r).toMatchObject({ ok: true, amountNaira: 18500, bankName: 'Test Bank', reused: false, expiresAt: '2026-10-22T11:30:00.000Z', expiresAtLagos: '12:30pm' });
     expect(paystack.products.get(jacket)!.quantity).toBe(0);
     const charge = [...paystack.charges.values()][0];
     expect(charge.amountKobo).toBe(1850000);

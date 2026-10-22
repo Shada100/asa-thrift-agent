@@ -8,6 +8,7 @@ export interface Item {
   priceNaira: number;
   status: ItemStatus;
   heldUntil?: string;
+  heldUntilLagos?: string;
 }
 
 export type OrderState = 'held' | 'paid' | 'released' | 'needs_owner';
@@ -38,6 +39,7 @@ export type CheckoutResult =
       accountNumber: string;
       accountName: string;
       expiresAt: string;
+      expiresAtLagos: string;
       reused: boolean;
     }
   | {
@@ -65,6 +67,7 @@ export interface PaymentResult {
   item?: string;
   amountNaira?: number;
   holdUntil?: string;
+  holdUntilLagos?: string;
   itemStillAvailable?: boolean;
   message: string;
 }

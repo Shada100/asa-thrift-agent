@@ -1,5 +1,5 @@
 import type { Config } from './config.js';
-import { newOrderRef, normalisePhone, normaliseRef } from './ids.js';
+import { lagosTime, newOrderRef, normalisePhone, normaliseRef } from './ids.js';
 import { PaystackError, type Paystack, type PsProduct, type PsVerify } from './paystack.js';
 import type { Store } from './store.js';
 import type { CheckoutResult, Item, Order, PaymentResult } from './types.js';
@@ -50,7 +50,7 @@ export function createShop({ paystack, store, config, now = () => new Date() }: 
       description: p.description,
       priceNaira: naira(p.price),
       status: inStock ? 'available' : heldUntil ? 'held' : 'sold',
-      ...(!inStock && heldUntil ? { heldUntil } : {}),
+      ...(!inStock && heldUntil ? { heldUntil, heldUntilLagos: lagosTime(heldUntil) } : {}),
     };
   }
 
@@ -199,6 +199,7 @@ export function createShop({ paystack, store, config, now = () => new Date() }: 
       accountNumber: o.accountNumber,
       accountName: o.accountName,
       expiresAt: o.expiresAt,
+      expiresAtLagos: lagosTime(o.expiresAt),
       reused,
     };
   }
@@ -292,12 +293,12 @@ export function createShop({ paystack, store, config, now = () => new Date() }: 
 
     const rejected = await store.getRejected(o.ref);
     if (rejected && !expired(o)) {
-      return { state: 'rejected_wrong_amount', ...facts(o), holdUntil: o.expiresAt, message: `Paystack bounced a transfer to this account (${rejected}). The money goes back to the sender's bank. Only the exact amount is accepted.` };
+      return { state: 'rejected_wrong_amount', ...facts(o), holdUntil: o.expiresAt, holdUntilLagos: lagosTime(o.expiresAt), message: `Paystack bounced a transfer to this account (${rejected}). The money goes back to the sender's bank. Only the exact amount is accepted.` };
     }
 
     // anything else (ongoing, pending, some status we've never seen) is "not paid yet"
     if (!expired(o)) {
-      return { state: 'not_yet', ...facts(o), holdUntil: o.expiresAt, message: 'Paystack has not received the transfer yet.' };
+      return { state: 'not_yet', ...facts(o), holdUntil: o.expiresAt, holdUntilLagos: lagosTime(o.expiresAt), message: 'Paystack has not received the transfer yet.' };
     }
     return { state: 'expired', ...facts(o), itemStillAvailable: await release(o), message: 'The hold ran out before Paystack received the money. The account number no longer works.' };
   }

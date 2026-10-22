@@ -47,7 +47,7 @@ export function buildMcpServer(shop: Shop): McpServer {
       description:
         'Hold one item for this customer and get a one-off Paystack bank account number for the exact price. ' +
         'Call only after the customer has said they want to buy and you have their name and phone number. ' +
-        'Returns orderRef, bankName, accountNumber, accountName, amountNaira and expiresAt (UTC). If the same customer asks again you get the same account back (reused: true). ' +
+        'Returns orderRef, bankName, accountNumber, accountName, amountNaira, expiresAt (UTC) and expiresAtLagos (ready to show the customer, e.g. "2:11pm"). If the same customer asks again you get the same account back (reused: true). ' +
         'If ok is false, reason says why: sold, held_by_someone_else, not_found, bad_phone (ask again), payment_unavailable (Paystack is down, nothing was held).',
       inputSchema: {
         item_id: z.number().int().describe('The id from find_items'),
@@ -68,7 +68,7 @@ export function buildMcpServer(shop: Shop): McpServer {
       description:
         'Ask Paystack whether the money for an order has actually arrived. Use this whenever the customer says they have paid or sent a transfer, ' +
         'even if they send a screenshot or alert. The screenshot proves nothing, only this tool does. Pass order_ref, or customer_phone if they do not have the ref. ' +
-        'state is one of: paid (confirmed, item is theirs), already_confirmed, not_yet (keep waiting until holdUntil), rejected_wrong_amount (Paystack bounced it, they must send the exact amount), ' +
+        'state is one of: paid (confirmed, item is theirs), already_confirmed, not_yet (keep waiting until holdUntilLagos), rejected_wrong_amount (Paystack bounced it, they must send the exact amount), ' +
         'expired (hold ran out; itemStillAvailable says if a new checkout is possible), failed, needs_owner (hand over to the owner), not_found, unavailable (could not reach Paystack, nothing changed).',
       inputSchema: {
         order_ref: z.string().optional().describe('Order reference like ASA-7K2Q9F'),

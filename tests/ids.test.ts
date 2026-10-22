@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { newOrderRef, normalisePhone, normaliseRef } from '../src/ids.js';
+import { lagosTime, newOrderRef, normalisePhone, normaliseRef } from '../src/ids.js';
 
 describe('order refs', () => {
   it('look like ASA- plus six unambiguous characters', () => {
@@ -26,5 +26,14 @@ describe('phones', () => {
     expect(normalisePhone('12345')).toBeNull();
     expect(normalisePhone('+447700900123')).toBeNull();
     expect(normalisePhone('')).toBeNull();
+  });
+});
+
+describe('lagosTime', () => {
+  // the model got this conversion wrong-ish and narrated it to the customer, so we do it here
+  it('formats a UTC instant as a short Lagos clock time', () => {
+    expect(lagosTime('2026-10-22T13:11:00.000Z')).toBe('2:11pm');
+    expect(lagosTime('2026-10-22T23:05:00.000Z')).toBe('12:05am');
+    expect(lagosTime('2026-10-22T11:00:00.000Z')).toBe('12:00pm');
   });
 });
