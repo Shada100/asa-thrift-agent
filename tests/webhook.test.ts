@@ -85,4 +85,30 @@ describe('paystack webhook', () => {
     expect((await post(base, { event: 'subscription.create', data: { id: 3 } })).status).toBe(200);
     expect((await store.getOrder(co.orderRef))?.state).toBe('held');
   });
+
+  // captured from Paystack test mode on 22 Oct: the ref lives under data.bank_transfer and there's no data.id
+  it('handles the real bank.transfer.rejected shape', async () => {
+    const { shop, base, co } = await start();
+    const real = {
+      event: 'bank.transfer.rejected',
+      data: {
+        bank_transfer: { amount: '1000000', message: 'incorrect amount sent', message_type: 'INCORRECT_AMOUNT', transaction_id: '6684511155', reference: co.orderRef },
+        customer: { email: `${co.orderRef.toLowerCase()}@example.com`, domain: 'test' },
+      },
+    };
+    expect((await post(base, real)).status).toBe(200);
+    expect((await shop.checkPayment({ orderRef: co.orderRef })).state).toBe('rejected_wrong_amount');
+  });
+
+  it('two different rejections with no data.id are not mistaken for duplicates', async () => {
+    const { store, base, co } = await start();
+    const evt = (txn: string) => ({
+      event: 'bank.transfer.rejected',
+      data: { bank_transfer: { amount: '1000000', message: 'incorrect amount sent', transaction_id: txn, reference: 'ASA-ZZZZZZ' } },
+    });
+    await post(base, evt('1111111111'));
+    // same length body, different transfer, must still be processed
+    await post(base, { ...evt('2222222222'), data: { bank_transfer: { ...evt('2222222222').data.bank_transfer, reference: co.orderRef } } });
+    expect(await store.getRejected(co.orderRef)).toBe('incorrect amount sent');
+  });
 });

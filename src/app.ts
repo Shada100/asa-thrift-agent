@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express from 'express';
 import type { Config } from './config.js';
@@ -67,7 +67,9 @@ export function createApp({ shop, store, config }: Deps) {
     console.log('paystack webhook', evt.event, raw.slice(0, 4000));
 
     // paystack retries, so the same event can turn up more than once
-    const eventKey = `evt:${evt.event}:${data.id ?? data.reference ?? raw.length}`;
+    // rejected events have no data.id, the transfer id lives under bank_transfer
+    const eventId = data.id ?? data.bank_transfer?.transaction_id ?? createHash('sha256').update(raw).digest('hex');
+    const eventKey = `evt:${evt.event}:${eventId}`;
     if (!(await store.once(eventKey))) {
       res.sendStatus(200);
       return;
@@ -79,7 +81,8 @@ export function createApp({ shop, store, config }: Deps) {
         await shop.checkPayment({ orderRef: String(data.reference) });
       } else if (evt.event === 'bank.transfer.rejected') {
         const ref = await refForRejection(data);
-        if (ref) await store.markRejected(ref, String(data.reason ?? data.gateway_response ?? data.message ?? 'transfer rejected'));
+        const why = data.bank_transfer?.message ?? data.reason ?? data.gateway_response ?? data.message ?? 'transfer rejected';
+        if (ref) await store.markRejected(ref, String(why));
         else console.warn('bank.transfer.rejected for an order we could not match');
       }
     } catch (err) {
@@ -89,9 +92,10 @@ export function createApp({ shop, store, config }: Deps) {
     res.sendStatus(200);
   });
 
-  // the rejected payload isn't documented, so look for our ref anywhere likely, then fall back to the account number
+  // paystack's docs have no sample of this event. the real one (seen in test mode) puts our ref
+  // at data.bank_transfer.reference; the other spots are kept in case the shape varies.
   async function refForRejection(data: any): Promise<string | null> {
-    for (const candidate of [data.reference, data.transaction_reference, data.metadata?.order_ref, data.transaction?.reference]) {
+    for (const candidate of [data.bank_transfer?.reference, data.reference, data.transaction_reference, data.metadata?.order_ref]) {
       const ref = typeof candidate === 'string' ? normaliseRef(candidate) : null;
       if (ref && (await store.getOrder(ref))) return ref;
     }
