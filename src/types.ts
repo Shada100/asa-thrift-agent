@@ -55,6 +55,7 @@ export type PaymentState =
   | 'expired'
   | 'failed'
   | 'needs_owner'
+  | 'cancelled'
   | 'not_found'
   | 'unavailable';
 

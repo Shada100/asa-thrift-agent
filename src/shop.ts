@@ -1,6 +1,6 @@
 import type { Config } from './config.js';
-import { newOrderRef, normalisePhone } from './ids.js';
-import { PaystackError, type Paystack, type PsProduct } from './paystack.js';
+import { newOrderRef, normalisePhone, normaliseRef } from './ids.js';
+import { PaystackError, type Paystack, type PsProduct, type PsVerify } from './paystack.js';
 import type { Store } from './store.js';
 import type { CheckoutResult, Item, Order, PaymentResult } from './types.js';
 
@@ -207,16 +207,138 @@ export function createShop({ paystack, store, config, now = () => new Date() }: 
     return { ok: false, reason: 'payment_unavailable', message: 'Paystack is not responding. Nothing was held or charged.' };
   }
 
-  async function checkPayment(): Promise<PaymentResult> {
-    return { state: 'not_found', message: 'not built yet' };
+  async function findOrder(a: { orderRef?: string; customerPhone?: string }): Promise<Order | null> {
+    const ref = a.orderRef ? normaliseRef(a.orderRef) : null;
+    if (ref) {
+      const o = await store.getOrder(ref);
+      if (o) return o;
+    }
+    const phone = a.customerPhone ? normalisePhone(a.customerPhone) : null;
+    return phone ? store.findActiveOrderByPhone(phone) : null;
   }
 
-  async function cancelCheckout(): Promise<PaymentResult> {
-    return { state: 'not_found', message: 'not built yet' };
+  const facts = (o: Order) => ({ orderRef: o.ref, item: o.productName, amountNaira: naira(o.amountKobo) });
+  const expired = (o: Order) => now().getTime() >= new Date(o.expiresAt).getTime();
+
+  // put the unit back on sale. guarded so a retry or a webhook can't add it back twice.
+  async function release(o: Order): Promise<boolean> {
+    if (await store.once(`release:${o.ref}`)) {
+      await putStockBack(o.productId);
+      await store.putOrder({ ...o, state: 'released' });
+    }
+    try {
+      const p = await paystack.getProduct(o.productId);
+      return p.active && (p.unlimited || p.quantity > 0);
+    } catch {
+      return false;
+    }
+  }
+
+  async function sendToOwner(o: Order, note: string): Promise<PaymentResult> {
+    await store.putOrder({ ...o, state: 'needs_owner', note });
+    return { state: 'needs_owner', ...facts(o), message: note };
+  }
+
+  // the only place an order becomes paid, and only from Paystack's own answer
+  async function settle(o: Order, v: PsVerify): Promise<PaymentResult> {
+    if (v.amountKobo < o.amountKobo) {
+      return sendToOwner(o, `Paystack shows ${naira(v.amountKobo)} paid against ${naira(o.amountKobo)}. The owner needs to sort this out.`);
+    }
+    if (!(await store.once(`paid:${o.ref}`))) {
+      return { state: 'already_confirmed', ...facts(o), message: 'This payment was already confirmed.' };
+    }
+
+    if (o.state === 'released') {
+      // money arrived after we gave the item back. keep the sale if the piece is still here.
+      try {
+        const p = await paystack.getProduct(o.productId);
+        if (p.active && (p.unlimited || p.quantity > 0)) {
+          if (!p.unlimited) await paystack.setQuantity(p.id, p.quantity - 1);
+        } else {
+          return sendToOwner(o, 'Paid after the hold expired and the item has since gone to someone else. The owner must arrange a refund.');
+        }
+      } catch {
+        return sendToOwner(o, 'Paid after the hold expired and the stock could not be checked. The owner must confirm the item by hand.');
+      }
+    }
+
+    await store.putOrder({ ...o, state: 'paid' });
+    return { state: 'paid', ...facts(o), message: `Paystack confirmed ${naira(o.amountKobo)} received. The item is sold to this customer.` };
+  }
+
+  async function checkPayment(a: { orderRef?: string; customerPhone?: string }): Promise<PaymentResult> {
+    const o = await findOrder(a);
+    if (!o) return { state: 'not_found', message: 'No order found. Ask for the order reference or the phone number used at checkout.' };
+    if (o.state === 'paid') return { state: 'already_confirmed', ...facts(o), message: 'This payment was already confirmed.' };
+    if (o.state === 'needs_owner') return { state: 'needs_owner', ...facts(o), message: o.note ?? 'The owner is handling this order.' };
+
+    let v: PsVerify;
+    try {
+      v = await paystack.verify(o.ref);
+    } catch (err) {
+      console.error(`verify failed for ${o.ref}`, err);
+      return { state: 'unavailable', ...facts(o), message: 'Could not reach Paystack to check. Nothing has changed; try again in a minute.' };
+    }
+
+    if (v.status === 'success') return settle(o, v);
+
+    if (o.state === 'released') {
+      return { state: 'expired', ...facts(o), itemStillAvailable: await release(o), message: 'This hold already expired and the account number no longer works.' };
+    }
+
+    if (v.status === 'failed' || v.status === 'reversed') {
+      return { state: 'failed', ...facts(o), itemStillAvailable: await release(o), message: 'Paystack marked this payment as failed. The hold is released.' };
+    }
+
+    const rejected = await store.getRejected(o.ref);
+    if (rejected && !expired(o)) {
+      return { state: 'rejected_wrong_amount', ...facts(o), holdUntil: o.expiresAt, message: `Paystack bounced a transfer to this account (${rejected}). The money goes back to the sender's bank. Only the exact amount is accepted.` };
+    }
+
+    // anything else (ongoing, pending, some status we've never seen) is "not paid yet"
+    if (!expired(o)) {
+      return { state: 'not_yet', ...facts(o), holdUntil: o.expiresAt, message: 'Paystack has not received the transfer yet.' };
+    }
+    return { state: 'expired', ...facts(o), itemStillAvailable: await release(o), message: 'The hold ran out before Paystack received the money. The account number no longer works.' };
+  }
+
+  async function cancelCheckout(orderRef: string): Promise<PaymentResult> {
+    const o = await findOrder({ orderRef });
+    if (!o) return { state: 'not_found', message: 'No order with that reference.' };
+    if (o.state === 'paid' || o.state === 'needs_owner') {
+      return sendToOwner(o, 'The customer wants to cancel an order that is already paid. Refunds are handled by the owner.');
+    }
+    if (o.state === 'held') {
+      // the money may have landed while they were deciding
+      try {
+        const v = await paystack.verify(o.ref);
+        if (v.status === 'success') return settle(o, v);
+      } catch {
+        return { state: 'unavailable', ...facts(o), message: 'Could not reach Paystack to check before cancelling. Nothing has changed.' };
+      }
+    }
+    await release(o);
+    return { state: 'cancelled', ...facts(o), message: 'Hold cancelled and the item is back on sale.' };
   }
 
   async function sweepExpired(): Promise<number> {
-    return 0;
+    const due = (await store.activeHolds()).filter(expired);
+    let released = 0;
+    for (const o of due) {
+      try {
+        const v = await paystack.verify(o.ref);
+        if (v.status === 'success') {
+          await settle(o, v);
+          continue;
+        }
+      } catch {
+        // can't tell if they paid, so leave it held and try again next time
+        continue;
+      }
+      await release(o);
+      released++;
+    }
+    return released;
   }
 
   return { findItems, startCheckout, checkPayment, cancelCheckout, sweepExpired };
