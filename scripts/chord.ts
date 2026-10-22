@@ -62,7 +62,8 @@ if (cmd === 'teammates') {
   const out = await chord('POST', '/v1/external-chat/messages', {
     workspace_id: workspace,
     ...(teammate ? { teammate_id: teammate } : {}),
-    sender_id: 'cli-tester',
+    // one sender per session: reusing a sender merged two sessions into one thread (see dev log)
+    sender_id: `cli-${sessionId.slice(0, 8)}`,
     display_name: 'CLI tester',
     session_id: sessionId,
     text,
