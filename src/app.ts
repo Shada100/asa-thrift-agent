@@ -2,6 +2,8 @@ import { timingSafeEqual } from 'node:crypto';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express from 'express';
 import type { Config } from './config.js';
+import { normaliseRef } from './ids.js';
+import { verifyWebhookSignature } from './paystack.js';
 import type { Shop } from './shop.js';
 import type { Store } from './store.js';
 import { buildMcpServer } from './tools.js';
@@ -18,7 +20,7 @@ function tokenMatches(header: string | undefined, token: string) {
   return given.length === want.length && timingSafeEqual(given, want);
 }
 
-export function createApp({ shop, config }: Deps) {
+export function createApp({ shop, store, config }: Deps) {
   const app = express();
 
   app.get('/health', (_req, res) => {
@@ -45,6 +47,59 @@ export function createApp({ shop, config }: Deps) {
       if (!res.headersSent) res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal error' }, id: null });
     }
   });
+
+  app.post('/paystack/webhook', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
+    const raw = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '';
+    if (!verifyWebhookSignature(raw, req.header('x-paystack-signature'), config.paystackSecret)) {
+      res.status(401).json({ error: 'bad signature' });
+      return;
+    }
+
+    let evt: { event?: string; data?: any };
+    try {
+      evt = JSON.parse(raw);
+    } catch {
+      res.status(400).json({ error: 'bad json' });
+      return;
+    }
+    const data = evt.data ?? {};
+    // test mode only, so it's fine to keep the whole thing while we learn the payload shapes
+    console.log('paystack webhook', evt.event, raw.slice(0, 4000));
+
+    // paystack retries, so the same event can turn up more than once
+    const eventKey = `evt:${evt.event}:${data.id ?? data.reference ?? raw.length}`;
+    if (!(await store.once(eventKey))) {
+      res.sendStatus(200);
+      return;
+    }
+
+    try {
+      if (evt.event === 'charge.success' && data.reference) {
+        // don't take the event's word for it, ask Paystack (same path the agent uses)
+        await shop.checkPayment({ orderRef: String(data.reference) });
+      } else if (evt.event === 'bank.transfer.rejected') {
+        const ref = await refForRejection(data);
+        if (ref) await store.markRejected(ref, String(data.reason ?? data.gateway_response ?? data.message ?? 'transfer rejected'));
+        else console.warn('bank.transfer.rejected for an order we could not match');
+      }
+    } catch (err) {
+      // still 200: a retry won't fix our bug, and the agent re-checks with Paystack anyway
+      console.error('webhook handling failed', err);
+    }
+    res.sendStatus(200);
+  });
+
+  // the rejected payload isn't documented, so look for our ref anywhere likely, then fall back to the account number
+  async function refForRejection(data: any): Promise<string | null> {
+    for (const candidate of [data.reference, data.transaction_reference, data.metadata?.order_ref, data.transaction?.reference]) {
+      const ref = typeof candidate === 'string' ? normaliseRef(candidate) : null;
+      if (ref && (await store.getOrder(ref))) return ref;
+    }
+    const account = data.account_number ?? data.receiver_bank_account_number ?? data.authorization?.receiver_bank_account_number;
+    if (!account) return null;
+    const match = (await store.activeHolds()).find((o) => o.accountNumber === String(account));
+    return match?.ref ?? null;
+  }
 
   // stateless mode has no sessions to stream or delete
   app.all('/mcp', (_req, res) => {
